@@ -1,0 +1,5 @@
+Outcome,Model,Estimate (Hard Drug Use),95% CI,P-value
+Viral Load (log10),Adjusted + Adherence,0.0101,"(-0.3848, 0.4051)",0.96
+CD4,Adjusted + Adherence,-169.1032,"(-231.6922, -106.5142)",1.71e-7
+Physical QOL,Adjusted + Adherence,-3.3644,"(-6.1293, -0.5995)",0.0172
+Mental QOL,Adjusted + Adherence,-0.7857,"(-4.2283, 2.6568)",0.654

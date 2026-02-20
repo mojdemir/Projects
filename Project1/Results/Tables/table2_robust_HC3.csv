@@ -1,0 +1,9 @@
+Outcome,Model,Estimate (Hard Drug Use),Robust SE (HC3),Robust 95% CI,Robust P-value
+Viral Load (log10),Adjusted,-0.0423,0.213,"(-0.4597, 0.3752)",0.843
+CD4 (log),Adjusted,-163.7895,36.4897,"(-235.3093, -92.2697)",9.05e-6
+Physical QOL,Adjusted,-3.1769,1.6121,"(-6.3367, -0.0171)",0.0494
+Mental QOL,Adjusted,-0.4742,2.5231,"(-5.4196, 4.4711)",0.851
+Viral Load (log10),Adjusted + Adherence,0.0101,0.21560000000000001,"(-0.4125, 0.4328)",0.962
+CD4 (log),Adjusted + Adherence,-169.1032,35.6875,"(-239.0507, -99.1557)",2.87e-6
+Physical QOL,Adjusted + Adherence,-3.3644,1.5809,"(-6.4629, -0.2659)",0.0338
+Mental QOL,Adjusted + Adherence,-0.7857,2.4587,"(-5.6047, 4.0333)",0.749
