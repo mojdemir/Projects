@@ -1,9 +1,9 @@
 Model,N,R2,Adj_R2,RMSE
-VL Adjusted,474,0.1696,0.1553,1.1173
-CD4 Adjusted,474,0.5634,0.5559,176.8867
-PHYS Adjusted,481,0.4265,0.4168,7.823
-MENT Adjusted,481,0.3387,0.3275,9.7055
-VL Adjusted + ADH,474,0.1911,0.1719,1.1027
-CD4 Adjusted + ADH,474,0.5737,0.5636,174.7837
-PHYS Adjusted + ADH,481,0.4392,0.426,7.7363
-MENT Adjusted + ADH,481,0.3514,0.3362,9.6117
+Viral Load (Adjusted),464,0.1677,0.15310000000000001,1.1213
+CD4 (Adjusted),464,0.5641,0.5564,176.3508
+Physical QOL (Adjusted),464,0.4291,0.4191,7.6911
+Mental QOL (Adjusted),464,0.3335,0.3218,9.7381
+Viral Load (Adjusted + Adherence),464,0.1858,0.166,1.1091
+CD4 (Adjusted + Adherence),464,0.5737,0.5633,174.4015
+Physical QOL (Adjusted + Adherence),464,0.4403,0.4267,7.6155
+Mental QOL (Adjusted + Adherence),464,0.3483,0.3324,9.6299

@@ -1,79 +1,104 @@
-
-
 ```{r}
 #============================================================
-# BIOS6624 Project 1 - Script 02B (REVISED): Bayesian Models 
-# Purpose:
-#   - Read processed wide dataset (Year 0 + Year 2)
-#   - Prepare analytic dataset (complete-case; non-missing exposure; set reference)
-#   - Fit Bayesian linear regression models in Stan for Year 2 outcomes:
-#       * Unadjusted:  Y2 ~ HardDrug + Y0
-#       * Adjusted:    Y2 ~ HardDrug + Y0 + Age + BMI + Smoking + Edu + Race
-#   - Extract HardDrug effect: posterior mean, 95% CrI (HPDI), Pr(beta>0), etc.
-#   - Create Table 2 (Bayesian results) analogous to frequentist Table 2
-#
-# Inputs:
-#   DataProcessed/df_year2_wide.rds
-#
-# Outputs:
-#   Results/Tables/table2_bayesian_year2.csv
-#   Results/Tables/table2_bayesian_year2_exposure_only.csv
-#   Results/Diagnostics/bayesian_table2_mcmc_diagnostics_summary.csv (optional)
-#
-# Notes:
-#   - Expects transformed variables exist in df_wide:
-#       logVLOAD_baseline, logVLOAD_year2, logCD4_baseline, logCD4_year2
-#   - Expects QOL outcomes:
-#       PHYS_baseline, PHYS_year2, MENT_baseline, MENT_year2
-#   - Expects covariates (same as frequentist):
-#       Age_baseline, BMI_baseline, Smoke_baseline, EDU_baseline, RACE_baseline
+# BIOS6624 Project 1 - Bayesian Model (ONE MODEL AT A TIME)
 #============================================================
+# PURPOSE
+#   Run ONE Bayesian linear regression model at a time using CmdStanR.
+#   This mirrors the “worksheet” approach:
+#     0) Load packages + set folders + check data
+#     1) Prepare analytic dataset (df_year2_wide)
+#     2) Write Stan model (linear regression + half-normal sigma) + compile once
+#     3) CHOOSE MODEL: specify outcome, baseline outcome, and model type
+#     4) Build formula -> complete-case data -> X/y
+#     5) Fit model (HMC / NUTS)
+#     6) Summarize exposure effect (HardDrugUse), compute probabilities, save outputs
+#     7) Diagnostics plots (show in R + save PDF + save PNGs)
+#     8) Model fit: LOO, WAIC, DIC (print + optional save)
+#
+# WHAT YOU EDIT EACH TIME (ONLY THIS BLOCK):
+#   outcome_y2, baseline_y0, model_name, seed
+#
+# NOTE ABOUT N (COMPLETE CASES):
+#   - df_year2_wide: applies a FIRST filter removing missing BMI and missing exposure.
+#   - df_model: applies complete-case for ALL variables used in the model formula
+#     (outcome, baseline outcome, covariates, and (if used) ADH_year2).
+#============================================================
+
+
+# -----------------------------
+# STEP 0: Packages
+# -----------------------------
 library(tidyverse)
 library(cmdstanr)
 library(posterior)
 library(bayestestR)
 library(mcmcse)
-
-processed_path <- "C:/Users/mojde/Desktop/Documents/Projects/Project1/DataProcessed/df_year2_wide.rds"
-results_tbl    <- "C:/Users/mojde/Desktop/Documents/Projects/Project1/Results/Tables"
-stan_dir       <- "C:/Users/mojde/Desktop/Documents/Projects/Project1/Code/STAN"
-
-df_wide <- readRDS(processed_path)
-
-if (!dir.exists(results_tbl)) dir.create(results_tbl, recursive = TRUE)
-if (!dir.exists(stan_dir))    dir.create(stan_dir, recursive = TRUE)
-diag_dir <- file.path(dirname(results_tbl), "Diagnostics")
-if (!dir.exists(diag_dir)) dir.create(diag_dir, recursive = TRUE)
+library(loo)
+library(bayesplot)
 
 ```
-```{r}
-# ============================================================
-# 1) Prepare analytic dataset (match frequentist)
-#    - drop missing exposure
-#    - set reference group to "No"
-# ============================================================
-if (!("HardDrugUse_baseline" %in% names(df_wide))) {
-  stop("HardDrugUse_baseline is not in df_wide. Check preprocessing.")
-}
 
-df_year2_wide <- df_wide %>%
-  filter(!is.na(HardDrugUse_baseline)) %>%
-  mutate(HardDrugUse_baseline = relevel(factor(HardDrugUse_baseline), ref = "No"))
+
+```{r}
+# -----------------------------
+# STEP 0A: Paths + data check
+# -----------------------------
+results_tbl <- "C:/Users/mojde/Desktop/Documents/Projects/Project1/Results/Tables"
+stan_dir    <- "C:/Users/mojde/Desktop/Documents/Projects/Project1/Code/STAN"
+diag_dir    <- "C:/Users/mojde/Desktop/Documents/Projects/Project1/Results/Diagnostics"
+
+dir.create(results_tbl, recursive = TRUE, showWarnings = FALSE)
+dir.create(stan_dir,    recursive = TRUE, showWarnings = FALSE)
+dir.create(diag_dir,    recursive = TRUE, showWarnings = FALSE)
+
+if (!exists("df_analytic")) stop("df_analytic not found in environment.")
+
+# Toggle saving outputs (simple on/off)
+SAVE_FILES <- TRUE
 ```
 
 
 
+```{r}
+# -----------------------------
+# STEP 0B: Prepare analytic dataset (Year 2 wide)
+# -----------------------------
+# This implements your overall analytic restriction that BMI and exposure are non-missing.
+# Additional missingness is handled later by model.frame(..., na.omit) per model.
+df_year2_wide <- df_analytic%>%
+  filter(!is.na(HardDrugUse_baseline), !is.na(BMI_baseline)) %>%
+  mutate(
+    HardDrugUse_baseline = relevel(factor(HardDrugUse_baseline), ref = "No"),
+    Smoke_baseline = factor(Smoke_baseline),
+    EDU_baseline   = factor(EDU_baseline),
+    RACE_baseline  = factor(RACE_baseline),
+    ADH_year2      = factor(ADH_year2)
+  )
+
+cat("\n--- Row counts after STEP 0B (baseline restriction) ---\n")
+cat("nrow(df_analytic)       =", nrow(df_analytic), "\n")
+cat("nrow(df_year2_wide) =", nrow(df_year2_wide), "\n")
+
+```
+
 
 ```{r}
-# ============================================================
-# 2) Stan model: general Bayesian linear regression
-#    (same as your current, just reused across outcomes)
-# ============================================================
+# -----------------------------
+# STEP 1: Define Stan model (Bayesian linear regression)
+# -----------------------------
+# Model:
+#   y ~ Normal(X * beta, sigma)
+# Priors:
+#   beta  ~ Normal(prior_mean, prior_sd)
+#   sigma ~ Half-Normal(0, sigma_prior_sd) implemented as:
+#       sigma <lower=0>
+#       sigma ~ normal(0, sigma_prior_sd)
+# We store log_lik so we can compute LOO and WAIC in R.
 stan_file <- write_stan_file("
 data {
   int<lower=0> N;
   int<lower=0> P;
-  matrix[N, P] X;          // first column should be intercept
+  matrix[N, P] X;
   vector[N] y;
 
   vector[P] prior_mean;
@@ -86,8 +111,7 @@ parameters {
 }
 model {
   beta  ~ normal(prior_mean, prior_sd);
-  sigma ~ normal(0, sigma_prior_sd);  // half-normal via <lower=0>
-
+  sigma ~ normal(0, sigma_prior_sd); // half-normal due to sigma>=0
   y ~ normal(X * beta, sigma);
 }
 generated quantities {
@@ -98,230 +122,410 @@ generated quantities {
 }
 ", dir = stan_dir, basename = "hiv_linear_regression_half_normal")
 
-mod <- cmdstan_model(stan_file)
 ```
 
 
 ```{r}
-###########################################################################
-# STEP 2: Compile the Stan program
-###########################################################################
+# -----------------------------
+# STEP 2: Compile Stan program (once per session)
+# -----------------------------
 mod <- cmdstan_model(stan_file)
+
+
+# -----------------------------
+# Helper: clinically meaningful thresholds (gamma)
+# -----------------------------
+# - Viral load: 0.5 log10 units
+# - CD4: 50 cells/uL
+# - QoL (PHYS/MENT): 2 points
+get_gamma <- function(outcome_y2) {
+  if (grepl("^log10VLOAD", outcome_y2, ignore.case = TRUE)) return(0.5)
+  if (grepl("^CD4",        outcome_y2, ignore.case = TRUE)) return(50)
+  return(2)
+}
+
 ```
 
 
+```{r}
+
+#============================================================
+# STEP 3: CHOOSE YOUR MODEL (EDIT ONLY THIS BLOCK)
+#============================================================
+# model_name options:
+#   "adjusted"      = includes baseline outcome + covariates
+#   "adjusted_adh"  = adjusted + ADH_year2
+# ============================================================
+# 1️⃣ Viral Load – Adjusted
+# ============================================================
+# outcome_y2  <- "log10VLOAD_year2"
+# baseline_y0 <- "log10VLOAD_baseline"
+# model_name  <- "adjusted"
+# seed        <- 123
+
+
+# ============================================================
+# 2️⃣ Viral Load – Adjusted + ADH
+# ============================================================
+# outcome_y2  <- "log10VLOAD_year2"
+# baseline_y0 <- "log10VLOAD_baseline"
+# model_name  <- "adjusted_adh"
+# seed        <- 123
+
+
+# ============================================================
+# 3️⃣ CD4 – Adjusted
+# ============================================================
+# outcome_y2  <- "CD4_year2"
+# baseline_y0 <- "CD4_baseline"
+# model_name  <- "adjusted"
+# seed        <- 123
+
+
+# ============================================================
+# 4️⃣ CD4 – Adjusted + ADH
+# ============================================================
+#outcome_y2  <- "CD4_year2"
+#baseline_y0 <- "CD4_baseline"
+#model_name  <- "adjusted_adh"
+#seed        <- 123
+
+
+# ============================================================
+# 5️⃣ Physical QoL – Adjusted
+# ============================================================
+# outcome_y2  <- "PHYSQOL_year2"
+# baseline_y0 <- "PHYSQOL_baseline"
+# model_name  <- "adjusted"
+# seed        <- 123
+
+
+# ============================================================
+# 6️⃣ Physical QoL – Adjusted + ADH
+# ============================================================
+# outcome_y2  <- "PHYSQOL_year2"
+# baseline_y0 <- "PHYSQOL_baseline"
+# model_name  <- "adjusted_adh"
+# seed        <- 123
+
+
+# ============================================================
+# 7️⃣ Mental QoL – Adjusted
+# ============================================================
+# outcome_y2  <- "MENTQOL_year2"
+# baseline_y0 <- "MENTQOL_baseline"
+# model_name  <- "adjusted"
+# seed        <- 123
+
+
+# ============================================================
+# 8️⃣ Mental QoL – Adjusted + ADH
+# ============================================================
+#outcome_y2  <- "MENTQOL_year2"
+#baseline_y0 <- "MENTQOL_baseline"
+#model_name  <- "adjusted_adh"
+#seed        <- 123
+```
+
 
 ```{r}
-###########################################################################
-# STEP 3: Prepare your data to pass to Stan
-###########################################################################
-
-# Safety checks (given prior NA issue)
-if (!("HardDrugUse_baseline" %in% names(df_wide))) {
-  stop("HardDrugUse_baseline is not in df_wide. Check preprocessing (Script 01).")
+#============================================================
+# STEP 4: Build formula, complete-case data, X/y
+#============================================================
+# Covariates (always included):
+#   Age_baseline + BMI_baseline + Smoke_baseline + EDU_baseline + RACE_baseline
+# Exposure:
+#   HardDrugUse_baseline
+# Baseline outcome:
+#   baseline_y0 (e.g., CD4_baseline)
+# Optional additional covariate:
+#   ADH_year2 (only if model_name == "adjusted_adh")
+form <- if (model_name == "adjusted") {
+  as.formula(paste0(
+    outcome_y2, " ~ HardDrugUse_baseline + ", baseline_y0,
+    " + Age_baseline + BMI_baseline + Smoke_baseline + EDU_baseline + RACE_baseline"
+  ))
+} else {
+  as.formula(paste0(
+    outcome_y2, " ~ HardDrugUse_baseline + ", baseline_y0,
+    " + Age_baseline + BMI_baseline + Smoke_baseline + EDU_baseline + RACE_baseline",
+    " + ADH_year2"
+  ))
 }
-if (all(is.na(df_wide$HardDrugUse_baseline))) {
-  stop("HardDrugUse_baseline is all NA in df_wide. Fix preprocessing (wide reshape/merge) before fitting.")
-}
 
-# Model formula aligned with frequentist core model
-form <- logVLOAD_year2 ~ HardDrugUse_baseline + logVLOAD_baseline +
-  Age_baseline + RACE_baseline + EDU_baseline + Income_baseline +
-  Smoke_baseline + Alcohol_baseline + logCESD_baseline
+prefix <- paste0("bayes_", outcome_y2, "_", model_name)
 
-# Stan cannot handle missingness -> complete cases for all model vars
-df_model <- model.frame(form, data = df_wide, na.action = na.omit)
+cat("\n============================\n")
+cat("Fitting:", prefix, "\n")
+cat("============================\n")
+cat("Formula:\n"); print(form)
 
-# Outcome
-y <- df_model$logVLOAD_year2
+# Complete-case dataset for THIS model (drops any rows missing any variable in form)
+df_model <- model.frame(form, data = df_year2_wide, na.action = na.omit)
 
-# Design matrix
+# Build y and design matrix X
+y <- as.numeric(df_model[[outcome_y2]])
 X <- model.matrix(form, data = df_model)
 
-# N and P
 N <- nrow(X)
 P <- ncol(X)
 
-# Hyperparameters for priors (OK to differ from worksheet)
-# If you want worksheet-vague: prior_sd <- rep(100, P); sigma_sd <- 100
+cat("\n--- Row counts for THIS model ---\n")
+cat("nrow(df_year2_wide) =", nrow(df_year2_wide), "\n")
+cat("nrow(df_model)      =", nrow(df_model), "\n")
+cat("Dropped (due to missing in model vars) =", nrow(df_year2_wide) - nrow(df_model), "\n")
+
+cat("\n--- Design matrix terms (first 30) ---\n")
+print(head(colnames(X), 30))
+
+if (N < 50) stop("Too few complete cases for this model (N = ", N, ").")
+```
+
+
+
+```{r}
+#============================================================
+# STEP 5: Priors + Stan data list
+#============================================================
+# Priors for coefficients:
 prior_mean <- rep(0, P)
-prior_sd   <- rep(10, P)
-sigma_sd   <- 10
+prior_sd   <- rep(100, P)
+
+# Prior scale for sigma:
+# Using sd(y) keeps the sigma prior sensible across outcomes on different scales.
+sigma_prior_sd <- sd(y)
 
 data_list <- list(
-  N = N,
-  P = P,
+  N = N, P = P,
   X = X,
   y = y,
   prior_mean = prior_mean,
   prior_sd = prior_sd,
-  sigma_prior_sd = sigma_sd
+  sigma_prior_sd = sigma_prior_sd
 )
-
 ```
 
 
-
 ```{r}
-###########################################################################
-# STEP 4: Fit Model (iterations can differ from worksheet)
-###########################################################################
+#============================================================
+# STEP 6: Fit model (iterations are “reasonable” for class projects)
+#============================================================
 fit <- mod$sample(
   data = data_list,
   chains = 4,
-  iter_warmup = 2000,
-  iter_sampling = 4000,
-  seed = 123,
-  refresh = 500
+  iter_warmup = 1000,
+  iter_sampling = 2000,
+  seed = seed,
+  refresh = 200
 )
 
-# Save fitted object
-saveRDS(fit, file.path(results_tbl, "bayesian_core_fit.rds"))
+if (SAVE_FILES) {
+  saveRDS(fit, file.path(results_tbl, paste0(prefix, "_fit.rds")))
+}
+
 ```
+
+
 ```{r}
-###########################################################################
-# STEP 5: Summarize the posterior (worksheet-style table)
-###########################################################################
+#============================================================
+# STEP 7: Posterior summary (R-hat, ESS) + save
+#============================================================
+cmd_sum <- fit$summary(variables = c("beta", "sigma")) %>% as_tibble()
+cat("\n--- CmdStan summary (beta + sigma) ---\n")
+print(cmd_sum)
 
-# Quick cmdstanr summary (mean/sd/quantiles + ESS/Rhat)
-cmdstan_sum <- fit$summary()
-write.csv(cmdstan_sum,
-          file.path(results_tbl, "bayesian_core_posterior_summary_cmdstan.csv"),
-          row.names = FALSE)
+if (SAVE_FILES) {
+  write.csv(cmd_sum,
+            file.path(results_tbl, paste0(prefix, "_cmdstan_summary_rhat_ess.csv")),
+            row.names = FALSE)
+}
+```
 
-# Worksheet-style results table: mean + MCSE + SD + 95% HPDI + ESS
-draws_mat <- as_draws_matrix(fit$draws())
-params <- colnames(draws_mat)
 
-# Exclude non-parameter columns from summarization: lp__ and log_lik[n]
-params <- params[!grepl("lp__|log_lik", params)]
 
-summary_table <- lapply(params, function(p) {
-  vals <- as.numeric(draws_mat[, p])
 
-  mcse_val <- mcmcse::mcse(vals)$se
-  ess_val  <- posterior::ess_bulk(vals)
-  hpd      <- bayestestR::hdi(vals, ci = 0.95)
+```{r}
+
+#============================================================
+# STEP 8: HardDrugUse effect summary + probabilities
+#============================================================
+# Extract posterior draws
+draws_mat <- posterior::as_draws_matrix(fit$draws())
+
+# Find the HardDrugUse columns in X (e.g., "HardDrugUse_baselineYes")
+drug_terms <- grep("^HardDrugUse_baseline", colnames(X), value = TRUE)
+if (length(drug_terms) == 0) stop("No HardDrugUse term found in design matrix X.")
+
+# Summarize each HardDrugUse coefficient (usually one term)
+drug_summary <- purrr::map_dfr(drug_terms, function(term) {
+  j <- which(colnames(X) == term)
+  b <- as.numeric(draws_mat[, paste0("beta[", j, "]")])
+  h <- bayestestR::hdi(b, ci = 0.95)
 
   tibble(
-    Parameter = p,
-    Estimate  = mean(vals),
-    MCSE      = mcse_val,
-    Std_Dev   = sd(vals),
-    HPDI_2.5  = hpd$CI_low,
-    HPDI_97.5 = hpd$CI_high,
-    ESS       = ess_val
+    Term = term,
+    Mean = mean(b),
+    SD   = sd(b),
+    HDI_2.5  = h$CI_low,
+    HDI_97.5 = h$CI_high,
+    MCSE = mcmcse::mcse(b)$se,
+    ESS_bulk = posterior::ess_bulk(b),
+    P_beta_gt_0 = mean(b > 0)
   )
-}) %>% bind_rows()
+})
 
-# Map beta[i] -> term names from model.matrix columns (nice for interpretation)
-beta_map <- tibble(
-  Parameter = paste0("beta[", 1:P, "]"),
-  Term = colnames(X)
-)
+cat("\n--- HardDrugUse effect (posterior mean + 95% HDI) ---\n")
+print(drug_summary)
 
-summary_table <- summary_table %>%
-  left_join(beta_map, by = "Parameter") %>%
-  mutate(Term = if_else(is.na(Term), Parameter, Term)) %>%
-  select(Term, everything())
+if (SAVE_FILES) {
+  write.csv(drug_summary,
+            file.path(results_tbl, paste0(prefix, "_exposure_only.csv")),
+            row.names = FALSE)
+}
 
-write.csv(summary_table,
-          file.path(results_tbl, "bayesian_core_mcse_hpdi_table.csv"),
-          row.names = FALSE)
+# MCSE check (rule of thumb: MCSE < 6% of posterior SD)
+mcse_check <- drug_summary %>%
+  mutate(MCSE_pct_of_SD = 100 * MCSE / SD,
+         MCSE_OK = MCSE_pct_of_SD < 6)
 
-# Exposure-only table (HardDrugUse terms)
-expo_rows <- summary_table %>%
-  filter(str_detect(Term, "HardDrugUse_baseline"))
+cat("\n--- MCSE check for HardDrugUse term(s) ---\n")
+print(mcse_check)
 
-write.csv(expo_rows,
-          file.path(results_tbl, "bayesian_core_exposure_only.csv"),
-          row.names = FALSE)
+if (SAVE_FILES) {
+  write.csv(mcse_check,
+            file.path(diag_dir, paste0(prefix, "_mcse_check.csv")),
+            row.names = FALSE)
+}
 
-# MCSE rule-of-thumb check (same style as worksheet)
-mcse_ok <- (100 * summary_table$MCSE / summary_table$Std_Dev) < 6
-write.csv(
-  tibble(Parameter = summary_table$Term, MCSE_pct_of_SD = 100 * summary_table$MCSE / summary_table$Std_Dev, MCSE_OK = mcse_ok),
-  file.path(diag_dir, "bayesian_core_mcse_check.csv"),
-  row.names = FALSE
-)
+# Clinically meaningful probability: P(|beta| > gamma)
+gamma <- get_gamma(outcome_y2)
+clin_prob <- purrr::map_dfr(drug_terms, function(term) {
+  j <- which(colnames(X) == term)
+  b <- as.numeric(draws_mat[, paste0("beta[", j, "]")])
+  tibble(
+    Term = term,
+    gamma = gamma,
+    P_abs_beta_gt_gamma = mean(abs(b) > gamma)
+  )
+})
+
+
+cat("\n--- Clinically meaningful probability ---\n")
+print(clin_prob)
+
+if (SAVE_FILES) {
+  write.csv(clin_prob,
+            file.path(results_tbl, paste0(prefix, "_clinically_meaningful_prob.csv")),
+            row.names = FALSE)
+}
+
 ```
 
 
 
+```{r}
+
+#============================================================
+# STEP 9: Diagnostics (show in R + save PDF + save PNGs)
+#============================================================
+draws_arr <- posterior::as_draws_array(fit$draws())
+
+# You can choose to plot all betas + sigma:
+diag_params <- c(grep("^beta\\[", dimnames(draws_arr)$variable, value = TRUE), "sigma")
+
+cat("\n--- Diagnostics plots (showing in R now) ---\n")
+trace_plot <- bayesplot::mcmc_trace(draws_arr, pars = diag_params)
+dens_plot  <- bayesplot::mcmc_dens_overlay(draws_arr, pars = diag_params)
+acf_plot   <- bayesplot::mcmc_acf(draws_arr, pars = diag_params)
+
+# CmdStan diagnostic text
+diag_text <- fit$cmdstan_diagnose()
+cat("\n--- CmdStan diagnose ---\n")
+print(diag_text)
+
+if (SAVE_FILES) {
+  # PDF (good for appendix)
+  pdf(file.path(diag_dir, paste0(prefix, "_mcmc_diagnostic_plots.pdf")))
+  print(trace_plot)
+  print(dens_plot)
+  print(acf_plot)
+  dev.off()
+
+  # High-quality PNGs (also good for appendix)
+  ggsave(file.path(diag_dir, paste0(prefix, "_trace.png")),   trace_plot, width = 8, height = 5, dpi = 300)
+  ggsave(file.path(diag_dir, paste0(prefix, "_density.png")), dens_plot,  width = 8, height = 5, dpi = 300)
+  ggsave(file.path(diag_dir, paste0(prefix, "_acf.png")),     acf_plot,   width = 8, height = 5, dpi = 300)
+
+  # Save cmdstan diagnose output
+  out_path <- file.path(diag_dir, paste0(prefix, "_cmdstan_diagnose.txt"))
+  if (is.list(diag_text)) {
+    capture.output(print(diag_text), file = out_path)
+  } else {
+    writeLines(diag_text, con = out_path)
+  }
+}
+
+
+
+```
+
 
 ```{r}
-###########################################################################
-# STEP 6: Model fit statistics (LOO + WAIC + optional DIC)
-###########################################################################
+#============================================================
+# STEP 10: Model fit statistics (LOO, WAIC, DIC)
+#============================================================
+# Extract log-likelihood matrix (iterations x N)
+loglik_mat <- posterior::as_draws_matrix(fit$draws("log_lik"))
 
-loglik_mat <- as_draws_matrix(fit$draws("log_lik"))  # iterations x N
+# WAIC + LOO (PSIS-LOO)
+waic_res <- loo::waic(loglik_mat)
+loo_res  <- loo::loo(loglik_mat)
 
-loo_res <- loo(loglik_mat)
-waic_res <- waic(loglik_mat)
-
-saveRDS(loo_res,  file.path(results_tbl, "bayesian_core_loo.rds"))
-saveRDS(waic_res, file.path(results_tbl, "bayesian_core_waic.rds"))
-
-# DIC computed by hand (worksheet-aligned; optional)
+# DIC (manual)
 D_theta <- -2 * rowSums(loglik_mat)
 mean_D  <- mean(D_theta)
 
-beta_mean  <- colMeans(draws_mat[, grep("^beta\\[", colnames(draws_mat)), drop = FALSE])
+beta_cols  <- grep("^beta\\[", colnames(draws_mat), value = TRUE)
+beta_mean  <- colMeans(draws_mat[, beta_cols, drop = FALSE])
 sigma_mean <- mean(draws_mat[, "sigma"])
 
-D_bar_theta <- -2 * sum(dnorm(y, mean = as.vector(X %*% beta_mean),
-                              sd = sigma_mean, log = TRUE))
+D_at_mean <- -2 * sum(dnorm(
+  y,
+  mean = as.numeric(X %*% beta_mean),
+  sd   = sigma_mean,
+  log  = TRUE
+))
 
-DIC <- 2 * mean_D - D_bar_theta
-writeLines(paste0("DIC = ", DIC), con = file.path(diag_dir, "bayesian_core_dic.txt"))
+DIC <- 2 * mean_D - D_at_mean
+
+cat("\n--- Model fit statistics ---\n")
+cat("DIC:\n"); print(DIC)
+cat("\nWAIC:\n"); print(waic_res)
+cat("\nLOO:\n");  print(loo_res)
+
+# Pull the key LOO numbers (for Table 4)
+elpd    <- loo_res$estimates["elpd_loo", "Estimate"]
+elpd_se <- loo_res$estimates["elpd_loo", "SE"]
+p_loo   <- loo_res$estimates["p_loo", "Estimate"]
+
+cat("\n--- Key LOO numbers (Table 4) ---\n")
+cat("elpd_loo =", elpd, "\n")
+cat("SE       =", elpd_se, "\n")
+cat("p_loo    =", p_loo, "\n")
 ```
-
 
 
 ```{r}
-##########################################################################
-# STEP 7: MCMC Diagnostics (plots + cmdstan diagnose)
-###########################################################################
-
-draws_arr <- as_draws_array(fit$draws())
-beta_names <- paste0("beta[", 1:P, "]")
-diag_params <- c(beta_names, "sigma")
-
-# Trace / density / ACF to one PDF
-pdf(file.path(diag_dir, "bayesian_core_mcmc_diagnostic_plots.pdf"))
-mcmc_trace(draws_arr, pars = diag_params)
-mcmc_dens_overlay(draws_arr, pars = diag_params)
-mcmc_acf(draws_arr, pars = diag_params)
-dev.off()
-
-# CmdStan diagnostics text
-cmdstan_diag <- fit$cmdstan_diagnose()
-sink(file.path(diag_dir, "bayesian_core_cmdstan_diagnose.txt"))
-print(cmdstan_diag)
-sink()
-
-# Save Rhat/ESS quick flags
-diag_summary <- fit$summary() %>%
-  as_tibble() %>%
-  select(variable, mean, sd, q5, q95, ess_bulk, ess_tail, rhat) %>%
-  mutate(
-    flag_rhat = if_else(!is.na(rhat) & rhat > 1.01, TRUE, FALSE),
-    flag_ess  = if_else(!is.na(ess_bulk) & ess_bulk < 400, TRUE, FALSE)
-  )
-
-write.csv(diag_summary,
-          file.path(diag_dir, "bayesian_core_mcmc_diagnostics_summary.csv"),
-          row.names = FALSE)
+#============================================================
+# STEP 11: Print output locations
+#============================================================
+if (SAVE_FILES) {
+  cat("\nSaved outputs to:\n")
+  cat(" Tables:", results_tbl, "\n")
+  cat(" Diags :", diag_dir, "\n")
+}
 ```
+print(DIC)
+print(waic_res)
+print(loo_res)
 
-
-
-```{r}
-###########################################################################
-# Print file locations
-###########################################################################
-cat("Saved posterior + fit outputs to:\n",
-    " - ", results_tbl, "\n",
-    "Saved diagnostics to:\n",
-    " - ", diag_dir, "\n", sep = "")
-```

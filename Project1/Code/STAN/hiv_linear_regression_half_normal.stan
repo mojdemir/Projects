@@ -2,7 +2,7 @@
 data {
   int<lower=0> N;
   int<lower=0> P;
-  matrix[N, P] X;          // first column should be intercept
+  matrix[N, P] X;
   vector[N] y;
 
   vector[P] prior_mean;
@@ -15,8 +15,7 @@ parameters {
 }
 model {
   beta  ~ normal(prior_mean, prior_sd);
-  sigma ~ normal(0, sigma_prior_sd);  // half-normal via <lower=0>
-
+  sigma ~ normal(0, sigma_prior_sd); // half-normal due to sigma>=0
   y ~ normal(X * beta, sigma);
 }
 generated quantities {

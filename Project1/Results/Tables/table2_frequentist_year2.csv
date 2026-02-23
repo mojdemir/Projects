@@ -1,5 +1,5 @@
 Outcome,Model,Estimate (Hard Drug Use),95% CI,P-value
-Viral Load (log10),Adjusted,-0.0423,"(-0.4395, 0.3549)",0.834
-CD4,Adjusted,-163.7895,"(-226.6423, -100.9366)",4.46e-7
-Physical QOL,Adjusted,-3.1769,"(-5.9522, -0.4016)",0.0249
-Mental QOL,Adjusted,-0.4742,"(-3.9246, 2.9761)",0.787
+Viral Load (log10),Adjusted,-0.0075,"(-0.4058, 0.3908)",0.971
+CD4,Adjusted,-166.8351,"(-229.4733, -104.1969)",2.54e-7
+Physical QOL,Adjusted,-3.3913,"(-6.1239, -0.6586)",0.0151
+Mental QOL,Adjusted,-0.5274,"(-3.993, 2.9382)",0.765

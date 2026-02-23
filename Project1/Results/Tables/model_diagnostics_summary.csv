@@ -1,0 +1,9 @@
+Model,BP_stat,BP_p,Max_VIF,Mean_VIF,Cooks_threshold,N_influential
+Viral Load (Adjusted),19.82,0.011,1.15,1.09,0.008620689655172414,20
+CD4 (Adjusted),13.99,0.0821,1.15,1.08,0.008620689655172414,22
+Physical QOL (Adjusted),59.04,7.19e-10,1.16,1.11,0.008620689655172414,30
+Mental QOL (Adjusted),48.61,7.57e-8,1.17,1.09,0.008620689655172414,35
+Viral Load (Adjusted + Adherence),31.25,0.00101,1.17,1.1,0.008620689655172414,32
+CD4 (Adjusted + Adherence),14.09,0.228,1.17,1.09,0.008620689655172414,19
+Physical QOL (Adjusted + Adherence),71.27,6.99e-11,1.17,1.11,0.008620689655172414,31
+Mental QOL (Adjusted + Adherence),56.77,3.67e-8,1.18,1.1,0.008620689655172414,25
