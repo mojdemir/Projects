@@ -18,43 +18,114 @@ When you click the **Knit** button a document will be generated that includes bo
 ```{r cars}
 library(tidyverse)
 
-# ---- Enter your final table values here ----
+# -----------------------------
+# Data
+# -----------------------------
 df_forest <- tribble(
   ~Outcome, ~Model, ~beta_mean, ~hdi_low, ~hdi_high, ~gamma,
-  "Log10 Viral Load", "Adjusted",        -0.028,  -0.436,   0.359, 0.5,
-  "Log10 Viral Load", "Adjusted + ADH",   0.017,  -0.365,   0.431, 0.5,
+  "Log10 Viral Load", "Adjusted",        -0.028,   -0.436,   0.359, 0.5,
+  "Log10 Viral Load", "Adjusted + ADH",   0.017,   -0.365,   0.431, 0.5,
   "CD4 Count",        "Adjusted",      -148.399, -208.554, -87.992, 50,
   "CD4 Count",        "Adjusted + ADH", -152.973, -209.429, -94.478, 50,
-  "Physical QoL",     "Adjusted",        -3.332,  -6.150,  -0.790, 2,
-  "Physical QoL",     "Adjusted + ADH",  -3.567,  -6.339,  -0.964, 2,
-  "Mental QoL",       "Adjusted",        -0.497,  -4.002,   2.968, 2,
-  "Mental QoL",       "Adjusted + ADH",  -0.742,  -4.290,   2.803, 2
+  "Physical QoL",     "Adjusted",        -3.332,   -6.150,  -0.790, 2,
+  "Physical QoL",     "Adjusted + ADH",  -3.567,   -6.339,  -0.964, 2,
+  "Mental QoL",       "Adjusted",        -0.497,   -4.002,   2.968, 2,
+  "Mental QoL",       "Adjusted + ADH",  -0.742,   -4.290,   2.803, 2
 ) %>%
   mutate(
-    label = paste0(Outcome, " (", Model, ")"),
-    Outcome = factor(Outcome, levels = c("Log10 Viral Load","CD4 Count","Physical QoL","Mental QoL")),
-    label = factor(label, levels = rev(label))  # for top-to-bottom ordering
+    Outcome = factor(Outcome,
+                     levels = c("Log10 Viral Load",
+                                "CD4 Count",
+                                "Physical QoL",
+                                "Mental QoL")),
+    Model = factor(Model,
+                   levels = c("Adjusted", "Adjusted + ADH")),
+    label = case_when(
+      Outcome == "CD4 Count" ~ sprintf("%.0f (%.0f, %.0f)",
+                                       beta_mean, hdi_low, hdi_high),
+      TRUE ~ sprintf("%.2f (%.2f, %.2f)",
+                     beta_mean, hdi_low, hdi_high)
+    )
   )
 
-# ---- Forest plot ----
-ggplot(df_forest, aes(x = beta_mean, y = label)) +
-  geom_vline(xintercept = 0, linetype = "dashed") +
-  geom_errorbarh(aes(xmin = hdi_low, xmax = hdi_high), height = 0.2) +
-  geom_point(size = 2) +
+# -----------------------------
+# Custom Professional Colors
+# -----------------------------
+navy  <- "#1C2A39"   # deep navy blue
+gold  <- "#D4A017"   # warm muted gold
+
+# -----------------------------
+# Plot
+# -----------------------------
+p <- ggplot(df_forest,
+            aes(x = beta_mean,
+                y = Model,
+                color = Model,
+                shape = Model)) +
+
+  # Zero (no effect) line
+  geom_vline(xintercept = 0,
+             linetype = "dashed",
+             linewidth = 1,
+             color = "grey30") +
+
+  # Clinical threshold lines (±gamma)
+  geom_vline(aes(xintercept =  gamma),
+             linetype = "dotted",
+             linewidth = 0.8,
+             color = "grey50") +
+  geom_vline(aes(xintercept = -gamma),
+             linetype = "dotted",
+             linewidth = 0.8,
+             color = "grey50") +
+
+  # HPDI interval
+  geom_errorbarh(aes(xmin = hdi_low, xmax = hdi_high),
+                 height = 0.18,
+                 linewidth = 1.2) +
+
+  # Posterior mean point
+  geom_point(size = 3.5) +
+
+  # Numeric annotation
+  geom_text(aes(label = label,
+                x = hdi_high),
+            nudge_x = 0.02,
+            hjust = 0,
+            size = 3.6,
+            color = "black",
+            show.legend = FALSE) +
+
+  facet_wrap(~ Outcome,
+             scales = "free_x",
+             ncol = 2) +
+
+  scale_color_manual(values = c("Adjusted" = navy,
+                                "Adjusted + ADH" = gold)) +
+
+  scale_shape_manual(values = c(16, 17)) +
+
+  scale_x_continuous(expand = expansion(mult = c(0.05, 0.30))) +
+
   labs(
-    x = "Posterior Mean (β) with 95% HPDI",
-    y = NULL,
-    title = "Forest Plot: Effect of Baseline Hard Drug Use on Year 2 Outcomes"
+    title = "Effect of Baseline Hard Drug Use on Year 2 Clinical Outcomes",
+    subtitle = "Points represent posterior means; horizontal bars represent 95% HPDIs\nDashed line = no effect; dotted lines = ± clinically meaningful threshold (γ)",
+    x = "Estimated Effect (β) on Outcome Scale",
+    y = NULL
   ) +
-  theme_minimal(base_size = 12)
+
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18),
+    plot.subtitle = element_text(size = 12),
+    strip.text = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  )
+
+p
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
