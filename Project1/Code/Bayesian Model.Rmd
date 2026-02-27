@@ -218,10 +218,10 @@ get_gamma <- function(outcome_y2) {
 # ============================================================
 # h) Mental QoL – Adjusted + ADH
 # ============================================================
-outcome_y2  <- "MENT_year2"
-baseline_y0 <- "MENT_baseline"
-model_name  <- "adjusted_adh"
-seed        <- 123
+#outcome_y2  <- "MENT_year2"
+#baseline_y0 <- "MENT_baseline"
+#model_name  <- "adjusted_adh"
+#seed        <- 123
 ```
 
 

@@ -101,17 +101,18 @@ p_std <- ggplot(df_plot, aes(x = beta_std, y = Outcome, color = Model, shape = M
 
   labs(
     title = "Figure 1. Bayesian Estimates of the Association Between Baseline Hard Drug Use and Year 2 Clinical Outcomes",
-    subtitle = "Points are posterior means; bars are 95% HPDIs. Dashed line = no effect; dotted lines = ±γ.",
+    subtitle = "Points are posterior means; bars are 95% HPDIs. 
+    Dashed line = no effect; dotted lines = ±γ.",
     y = NULL
   ) +
 
-  theme_classic(base_size = 14) +
+  theme_classic(base_size = 11) +
   theme(
     plot.title = element_text(face = "bold"),
     legend.position = "bottom",
     legend.title = element_blank(),
     axis.text.y = element_text(face = "bold"),
-    plot.subtitle = element_text(size = 11),
+    plot.subtitle = element_text(size = 10),
     plot.margin = margin(10, 40, 10, 10)
   ) +
   coord_cartesian(clip = "off")
@@ -119,4 +120,12 @@ p_std <- ggplot(df_plot, aes(x = beta_std, y = Outcome, color = Model, shape = M
 p_std
 
 ```
+
+ggsave(
+  filename = "Figure_Bayesian_Effects.pdf",
+  plot = p_std,
+  width = 11,
+  height = 7,
+  units = "in"
+)
 

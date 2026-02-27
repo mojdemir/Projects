@@ -609,7 +609,7 @@ digraph flowchart {
 
   F [label = 'Frequentist linear regression analyses\\n(n = 476)']
 
-  G [label = 'Bayesian analyses\\nComplete-case for all model variables\\nFinal analytic sample (CD4 models shown): n = 463']
+  G [label = 'Bayesian analyses\\nComplete-case for all model variables\\nFinal analytic sample: n = 463']
 
   # Exclusion node (defined to match Methods)
   X1 [label = 'Excluded:\\nIncomplete outcome data for eligibility definition\\n(missing any of the 4 outcomes at baseline or Year 2)\\n(n = 239)',
@@ -632,6 +632,6 @@ digraph flowchart {
 ```{r}
 svg_txt <- export_svg(flowchart)  # returns SVG text
 rsvg_png(charToRaw(svg_txt),
-         file = "Figure_A1_Flowchart.png",
+         file = "Flowchart.png",
          width = 3000, height = 4000)  # high-res
 ```
