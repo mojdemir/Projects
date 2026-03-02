@@ -603,7 +603,7 @@ digraph flowchart {
 
   C [label = 'Reshape to wide format\\n(one record per participant)']
 
-  D [label = 'Data management\\nRecode special missing codes\\nSet 3 BMI outliers (>70 kg/m²) to missing\\nLog₁₀-transform viral load\\nCollapse race & education categories']
+  D [label = 'Data management\\nRecode special missing codes\\nSet 3 BMI outliers (>70 kg/m²) to missing\\nLog₁₀-transform viral load\\nCollapse race, education & adherence categories']
 
   E [label = 'Eligibility: complete data for ALL outcomes\\nat baseline and Year 2\\n(log₁₀ viral load, CD4, physical QoL, mental QoL)\\nAnalytic sample: n = 476']
 

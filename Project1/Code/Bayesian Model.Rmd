@@ -155,10 +155,10 @@ get_gamma <- function(outcome_y2) {
 # ============================================================
 # a) Viral Load – Adjusted
 # ============================================================
-#outcome_y2  <- "log10VLOAD_year2"
-#baseline_y0 <- "log10VLOAD_baseline"
-#model_name  <- "adjusted"
-#seed        <- 123
+outcome_y2  <- "log10VLOAD_year2"
+baseline_y0 <- "log10VLOAD_baseline"
+model_name  <- "adjusted"
+seed        <- 123
 
 
 # ============================================================
